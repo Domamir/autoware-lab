@@ -74,6 +74,8 @@ services:
       CARLA_HOST: ${CARLA_HOST:-localhost}
       CARLA_PORT: ${CARLA_PORT:-2000}
       CARLA_MASTER_PORT: ${CARLA_MASTER_PORT:-2005}
+      CARLA_CAMERA_SIZE: ${CARLA_CAMERA_SIZE:-800x450}
+      CARLA_CAMERA_HZ: ${CARLA_CAMERA_HZ:-5}
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${AUTOWARE_DATA}:/home/aw/autoware_data
