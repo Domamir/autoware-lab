@@ -1,0 +1,463 @@
+<p><strong>Czas:</strong> 1 zajęcia · <strong>Praca:</strong> samodzielnie, krok po kroku · <strong>Wymaga:</strong> Python, przejście
+<a target="_blank" rel="noopener" href="https://github.com/PanHassan/Carla-Autoware-Bridge/blob/autoware-1.9-carla-0.9.16/README.md">README repozytorium</a> do przejazdu do celu włącznie</p>
+<p>Zbudujesz licznik jazdy jak w samochodzie: aktualna prędkość, przejechany dystans,
+prędkość maksymalna, tryb pracy Autoware i czas jazdy autonomicznej. Najpierw jako log
+w terminalu, potem w oknie.</p>
+<p>Po drodze poznasz wszystko, czego potrzeba w <a target="_blank" rel="noopener" href="https://github.com/PanHassan/Carla-Autoware-Bridge/blob/autoware-1.9-carla-0.9.16/projekty/01-panel-kierowcy.md">projekcie 1</a>:
+narzędzia <code>ros2</code> w terminalu, własny pakiet, subskrypcje, timer, czas symulacji, QoS tematów
+Autoware i okno PyQt5 połączone z ROS. Każdy krok kończy się punktem <strong style="color: #1a7f37;">✔ Sprawdź</strong>: nie idź dalej,
+dopóki nie działa.</p>
+<h3 style="margin-top: 1.6em;">Pięć pojęć na start</h3>
+<div class="table-responsive"><table class="table table-bordered table-sm">
+<thead class="thead-light">
+<tr>
+<th>Pojęcie</th>
+<th>Co to</th>
+<th>Przykład</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>węzeł</strong> (node)</td>
+<td>program podłączony do ROS. Autoware to ok. 170 węzłów</td>
+<td><code>velocity_smoother</code></td>
+</tr>
+<tr>
+<td><strong>temat</strong> (topic)</td>
+<td>nazwany kanał, którym węzły wysyłają sobie dane</td>
+<td><code>/vehicle/status/velocity_status</code></td>
+</tr>
+<tr>
+<td><strong>wiadomość</strong> (message)</td>
+<td>jedna porcja danych o ustalonym typie (polach)</td>
+<td><code>VelocityReport</code> z polem <code>longitudinal_velocity</code></td>
+</tr>
+<tr>
+<td><strong>subskrypcja</strong></td>
+<td>„chcę dostawać wiadomości z tematu X”: ROS woła Twoją funkcję po każdej z nich</td>
+<td><code>create_subscription(...)</code></td>
+</tr>
+<tr>
+<td><strong>pakiet</strong></td>
+<td>katalog z węzłami, który <code>colcon</code> buduje i instaluje</td>
+<td><code>carla_autoware_examples</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3 style="margin-top: 1.6em;">Krok 1. Rozejrzyj się w działającym Autoware</h3>
+<p>Uruchom Autoware (<code>carla-aw</code>) jak w README i zostaw je włączone. Wszystko poniżej wpisujesz
+w <strong>drugim</strong> terminalu: <code>./scripts/aw_shell.sh</code> na hoście.</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code>ros2<span style="color: #bbbbbb"> </span>node<span style="color: #bbbbbb"> </span>list<span style="color: #bbbbbb"> </span>|<span style="color: #bbbbbb"> </span>wc<span style="color: #bbbbbb"> </span>-l<span style="color: #bbbbbb">                          </span><span style="color: #3D7B7B; font-style: italic"># ile węzłów działa</span>
+ros2<span style="color: #bbbbbb"> </span>topic<span style="color: #bbbbbb"> </span>list<span style="color: #bbbbbb"> </span>|<span style="color: #bbbbbb"> </span>grep<span style="color: #bbbbbb"> </span>vehicle<span style="color: #bbbbbb">                  </span><span style="color: #3D7B7B; font-style: italic"># tematy ze stanem pojazdu</span>
+ros2<span style="color: #bbbbbb"> </span>topic<span style="color: #bbbbbb"> </span>info<span style="color: #bbbbbb"> </span>/vehicle/status/velocity_status<span style="color: #bbbbbb"> </span><span style="color: #3D7B7B; font-style: italic"># typ wiadomości i liczba nadawców/odbiorców</span>
+ros2<span style="color: #bbbbbb"> </span>topic<span style="color: #bbbbbb"> </span>hz<span style="color: #bbbbbb"> </span>/vehicle/status/velocity_status<span style="color: #bbbbbb">   </span><span style="color: #3D7B7B; font-style: italic"># jak często przychodzi (Ctrl+C kończy)</span>
+ros2<span style="color: #bbbbbb"> </span>topic<span style="color: #bbbbbb"> </span><span style="color: #008000">echo</span><span style="color: #bbbbbb"> </span>/vehicle/status/velocity_status<span style="color: #bbbbbb"> </span><span style="color: #3D7B7B; font-style: italic"># podgląd na żywo (Ctrl+C kończy)</span>
+ros2<span style="color: #bbbbbb"> </span>interface<span style="color: #bbbbbb"> </span>show<span style="color: #bbbbbb"> </span>autoware_vehicle_msgs/msg/VelocityReport<span style="color: #bbbbbb">   </span><span style="color: #3D7B7B; font-style: italic"># jakie pola ma wiadomość</span>
+</code></pre>
+
+<p>Teraz temat z trybem pracy Autoware:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code>ros2<span style="color: #bbbbbb"> </span>topic<span style="color: #bbbbbb"> </span><span style="color: #008000">echo</span><span style="color: #bbbbbb"> </span>/api/operation_mode/state
+ros2<span style="color: #bbbbbb"> </span>interface<span style="color: #bbbbbb"> </span>show<span style="color: #bbbbbb"> </span>autoware_adapi_v1_msgs/msg/OperationModeState
+</code></pre>
+
+<p><strong style="color: #1a7f37;">✔ Sprawdź</strong> (zapisz odpowiedzi, przydadzą się):</p>
+<ol>
+<li>W jakich jednostkach jest <code>longitudinal_velocity</code>? (podpowiedź: komentarz w <code>interface show</code>)</li>
+<li>Ile razy na sekundę przychodzi prędkość?</li>
+<li>Jaką liczbą jest zapisany tryb AUTONOMOUS?</li>
+<li>Przejedź do celu (RViz albo <code>drive_to_goal</code>) z otwartym <code>ros2 topic echo /api/operation_mode/state</code>.
+   Kiedy przychodzą nowe wiadomości: regularnie czy tylko przy zmianie?</li>
+</ol>
+<h3 style="margin-top: 1.6em;">Krok 2. Własny pakiet</h3>
+<p>W terminalu kontenera:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code><span style="color: #008000">cd</span><span style="color: #bbbbbb"> </span>~/ws/src
+ros2<span style="color: #bbbbbb"> </span>pkg<span style="color: #bbbbbb"> </span>create<span style="color: #bbbbbb"> </span>licznik_jazdy<span style="color: #bbbbbb"> </span>--build-type<span style="color: #bbbbbb"> </span>ament_python<span style="color: #bbbbbb"> </span>--license<span style="color: #bbbbbb"> </span>Apache-2.0<span style="color: #bbbbbb"> </span><span style="color: #AA5D1F; font-weight: bold">\</span>
+<span style="color: #bbbbbb">    </span>--dependencies<span style="color: #bbbbbb"> </span>rclpy<span style="color: #bbbbbb"> </span>autoware_vehicle_msgs<span style="color: #bbbbbb"> </span>autoware_adapi_v1_msgs
+</code></pre>
+
+<p>Nazwa pakietu musi stać <strong>przed</strong> <code>--dependencies</code>: wszystko po tej opcji jest traktowane jako
+zależność.</p>
+<p>Powstał katalog <code>ws/src/licznik_jazdy/</code> (na hoście też: otwórz go w VS Code):</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code>licznik_jazdy/
+├── package.xml          # nazwa, opis, zależności
+├── setup.py             # jak zainstalować pakiet i jakie komendy udostępnia
+├── licznik_jazdy/       # tu będą Twoje pliki .py
+│   └── __init__.py
+├── resource/  test/  setup.cfg  LICENSE
+</code></pre>
+
+<p><strong style="color: #1a7f37;">✔ Sprawdź:</strong> pakiet się buduje.</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code><span style="color: #008000">cd</span><span style="color: #bbbbbb"> </span>~/ws<span style="color: #bbbbbb"> </span><span style="color: #666666">&amp;&amp;</span><span style="color: #bbbbbb"> </span>colcon<span style="color: #bbbbbb"> </span>build<span style="color: #bbbbbb"> </span>--symlink-install<span style="color: #bbbbbb"> </span>--packages-select<span style="color: #bbbbbb"> </span>licznik_jazdy
+</code></pre>
+
+<p>Na końcu ma być <code>Summary: 1 package finished</code>.</p>
+<h3 style="margin-top: 1.6em;">Krok 3. Pierwszy węzeł: wypisz prędkość</h3>
+<p>Utwórz plik <code>licznik_jazdy/licznik_jazdy/predkosc.py</code>:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code><span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">autoware_vehicle_msgs.msg</span> <span style="color: #008000; font-weight: bold">import</span> VelocityReport
+<span style="color: #008000; font-weight: bold">import</span> <span style="color: #0000FF; font-weight: bold">rclpy</span>
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">rclpy.node</span> <span style="color: #008000; font-weight: bold">import</span> Node
+
+
+<span style="color: #008000; font-weight: bold">class</span> <span style="color: #0000FF; font-weight: bold">Predkosc</span>(Node):
+
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">__init__</span>(<span style="color: #008000">self</span>):
+        <span style="color: #008000">super</span>()<span style="color: #666666">.</span><span style="color: #0000FF">__init__</span>(<span style="color: #BA2121">&#39;predkosc&#39;</span>)
+        <span style="color: #3D7B7B; font-style: italic"># (typ wiadomości, nazwa tematu, funkcja wołana po każdej wiadomości, długość kolejki)</span>
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>create_subscription(
+            VelocityReport, <span style="color: #BA2121">&#39;/vehicle/status/velocity_status&#39;</span>, <span style="color: #008000">self</span><span style="color: #666666">.</span>on_velocity, <span style="color: #666666">10</span>)
+
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">on_velocity</span>(<span style="color: #008000">self</span>, msg):
+        kmh <span style="color: #666666">=</span> msg<span style="color: #666666">.</span>longitudinal_velocity <span style="color: #666666">*</span> <span style="color: #666666">3.6</span>
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>get_logger()<span style="color: #666666">.</span>info(<span style="color: #BA2121">f&#39;prędkość: </span><span style="color: #A45A77; font-weight: bold">{</span>kmh<span style="color: #A45A77; font-weight: bold">:</span><span style="color: #BA2121">.1f</span><span style="color: #A45A77; font-weight: bold">}</span><span style="color: #BA2121"> km/h&#39;</span>)
+
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">main</span>():
+    rclpy<span style="color: #666666">.</span>init()
+    node <span style="color: #666666">=</span> Predkosc()
+    <span style="color: #008000; font-weight: bold">try</span>:
+        rclpy<span style="color: #666666">.</span>spin(node)    <span style="color: #3D7B7B; font-style: italic"># czeka na wiadomości i woła on_velocity, aż do Ctrl+C</span>
+    <span style="color: #008000; font-weight: bold">except</span> <span style="color: #CB3F38; font-weight: bold">KeyboardInterrupt</span>:
+        <span style="color: #008000; font-weight: bold">pass</span>
+    <span style="color: #008000; font-weight: bold">finally</span>:
+        node<span style="color: #666666">.</span>destroy_node()
+        rclpy<span style="color: #666666">.</span>try_shutdown()
+</code></pre>
+
+<p>Zwróć uwagę: nigdzie nie wołasz <code>on_velocity</code> sam. Robi to <code>rclpy.spin()</code> za każdym razem,
+gdy przyjdzie wiadomość.</p>
+<p>Żeby <code>ros2 run</code> znalazł węzeł, dopisz go w <code>setup.py</code> w <code>entry_points</code>
+(format: <code>nazwa_komendy = pakiet.plik:funkcja</code>):</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code>    entry_points<span style="color: #666666">=</span>{
+        <span style="color: #BA2121">&#39;console_scripts&#39;</span>: [
+            <span style="color: #BA2121">&#39;predkosc = licznik_jazdy.predkosc:main&#39;</span>,
+        ],
+    },
+</code></pre>
+
+<p>Zbuduj i uruchom:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code><span style="color: #008000">cd</span><span style="color: #bbbbbb"> </span>~/ws<span style="color: #bbbbbb"> </span><span style="color: #666666">&amp;&amp;</span><span style="color: #bbbbbb"> </span>colcon<span style="color: #bbbbbb"> </span>build<span style="color: #bbbbbb"> </span>--symlink-install<span style="color: #bbbbbb"> </span>--packages-select<span style="color: #bbbbbb"> </span>licznik_jazdy
+<span style="color: #008000">source</span><span style="color: #bbbbbb"> </span>install/setup.bash
+ros2<span style="color: #bbbbbb"> </span>run<span style="color: #bbbbbb"> </span>licznik_jazdy<span style="color: #bbbbbb"> </span>predkosc<span style="color: #bbbbbb"> </span>--ros-args<span style="color: #bbbbbb"> </span>-p<span style="color: #bbbbbb"> </span>use_sim_time:<span style="color: #666666">=</span><span style="color: #008000">true</span>
+</code></pre>
+
+<p><code>source install/setup.bash</code> jest potrzebne raz w każdym terminalu po zbudowaniu <strong>nowego</strong>
+pakietu. Nowo otwierane terminale robią to same.</p>
+<p><strong style="color: #1a7f37;">✔ Sprawdź:</strong> ok. 20 linii na sekundę <code>prędkość: 0.0 km/h</code>, a w czasie jazdy rosnące wartości.
+W drugim terminalu <code>ros2 node list | grep predkosc</code> pokazuje Twój węzeł.</p>
+<h3 style="margin-top: 1.6em;">Krok 4. Licznik: stan, timer i czas symulacji</h3>
+<p>Wypisywanie 20 razy na sekundę jest nieczytelne. Licznik będzie zbierał dane w jednym obiekcie
+stanu, a wypisywał je raz na sekundę. Utwórz <code>licznik_jazdy/licznik_jazdy/licznik.py</code>:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code><span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">dataclasses</span> <span style="color: #008000; font-weight: bold">import</span> dataclass
+
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">autoware_adapi_v1_msgs.msg</span> <span style="color: #008000; font-weight: bold">import</span> OperationModeState
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">autoware_vehicle_msgs.msg</span> <span style="color: #008000; font-weight: bold">import</span> VelocityReport
+<span style="color: #008000; font-weight: bold">import</span> <span style="color: #0000FF; font-weight: bold">rclpy</span>
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">rclpy.node</span> <span style="color: #008000; font-weight: bold">import</span> Node
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">rclpy.qos</span> <span style="color: #008000; font-weight: bold">import</span> DurabilityPolicy, QoSProfile, ReliabilityPolicy
+
+<span style="color: #3D7B7B; font-style: italic"># Tematy /api/... publikują stan raz, przy zmianie, i zostawiają go dla spóźnionych</span>
+<span style="color: #3D7B7B; font-style: italic"># subskrybentów (&quot;transient local&quot;). Żeby go dostać, subskrybent musi o to poprosić.</span>
+API_QOS <span style="color: #666666">=</span> QoSProfile(
+    depth<span style="color: #666666">=1</span>,
+    reliability<span style="color: #666666">=</span>ReliabilityPolicy<span style="color: #666666">.</span>RELIABLE,
+    durability<span style="color: #666666">=</span>DurabilityPolicy<span style="color: #666666">.</span>TRANSIENT_LOCAL,
+)
+
+<span style="color: #3D7B7B; font-style: italic"># Liczba -&gt; nazwa, np. 2 -&gt; &#39;AUTONOMOUS&#39;. Stałe są zdefiniowane w samej wiadomości.</span>
+NAZWY_TRYBOW <span style="color: #666666">=</span> {
+    OperationModeState<span style="color: #666666">.</span>UNKNOWN: <span style="color: #BA2121">&#39;UNKNOWN&#39;</span>,
+    OperationModeState<span style="color: #666666">.</span>STOP: <span style="color: #BA2121">&#39;STOP&#39;</span>,
+    OperationModeState<span style="color: #666666">.</span>AUTONOMOUS: <span style="color: #BA2121">&#39;AUTONOMOUS&#39;</span>,
+    OperationModeState<span style="color: #666666">.</span>LOCAL: <span style="color: #BA2121">&#39;LOCAL&#39;</span>,
+    OperationModeState<span style="color: #666666">.</span>REMOTE: <span style="color: #BA2121">&#39;REMOTE&#39;</span>,
+}
+
+
+<span style="color: #AA22FF">@dataclass</span>
+<span style="color: #008000; font-weight: bold">class</span> <span style="color: #0000FF; font-weight: bold">StanLicznika</span>:
+    predkosc_kmh: <span style="color: #008000">float</span> <span style="color: #666666">|</span> <span style="color: #008000; font-weight: bold">None</span> <span style="color: #666666">=</span> <span style="color: #008000; font-weight: bold">None</span>   <span style="color: #3D7B7B; font-style: italic"># None = jeszcze nic nie przyszło</span>
+    tryb: <span style="color: #008000">int</span> <span style="color: #666666">|</span> <span style="color: #008000; font-weight: bold">None</span> <span style="color: #666666">=</span> <span style="color: #008000; font-weight: bold">None</span>
+    dystans_m: <span style="color: #008000">float</span> <span style="color: #666666">=</span> <span style="color: #666666">0.0</span>
+    max_predkosc_kmh: <span style="color: #008000">float</span> <span style="color: #666666">=</span> <span style="color: #666666">0.0</span>
+    czas_autonomiczny_s: <span style="color: #008000">float</span> <span style="color: #666666">=</span> <span style="color: #666666">0.0</span>
+
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">tekst</span>(wartosc, wzor<span style="color: #666666">=</span><span style="color: #BA2121">&#39;</span><span style="color: #A45A77; font-weight: bold">{:.1f}</span><span style="color: #BA2121">&#39;</span>):
+<span style="color: #bbbbbb">    </span><span style="color: #BA2121; font-style: italic">&quot;&quot;&quot;Liczba jako tekst albo &#39;—&#39;, gdy jeszcze jej nie ma.&quot;&quot;&quot;</span>
+    <span style="color: #008000; font-weight: bold">return</span> <span style="color: #BA2121">&#39;—&#39;</span> <span style="color: #008000; font-weight: bold">if</span> wartosc <span style="color: #AA22FF; font-weight: bold">is</span> <span style="color: #008000; font-weight: bold">None</span> <span style="color: #008000; font-weight: bold">else</span> wzor<span style="color: #666666">.</span>format(wartosc)
+
+
+<span style="color: #008000; font-weight: bold">class</span> <span style="color: #0000FF; font-weight: bold">Licznik</span>(Node):
+
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">__init__</span>(<span style="color: #008000">self</span>, nazwa<span style="color: #666666">=</span><span style="color: #BA2121">&#39;licznik_jazdy&#39;</span>):
+        <span style="color: #008000">super</span>()<span style="color: #666666">.</span><span style="color: #0000FF">__init__</span>(nazwa)
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>stan <span style="color: #666666">=</span> StanLicznika()
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>ostatni_czas <span style="color: #666666">=</span> <span style="color: #008000; font-weight: bold">None</span>
+
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>create_subscription(
+            VelocityReport, <span style="color: #BA2121">&#39;/vehicle/status/velocity_status&#39;</span>, <span style="color: #008000">self</span><span style="color: #666666">.</span>on_velocity, <span style="color: #666666">10</span>)
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>create_subscription(
+            OperationModeState, <span style="color: #BA2121">&#39;/api/operation_mode/state&#39;</span>, <span style="color: #008000">self</span><span style="color: #666666">.</span>on_mode, API_QOS)
+
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">on_velocity</span>(<span style="color: #008000">self</span>, msg):
+        s <span style="color: #666666">=</span> <span style="color: #008000">self</span><span style="color: #666666">.</span>stan
+        <span style="color: #3D7B7B; font-style: italic"># abs(): na postoju Autoware raportuje czasem -0.0, a licznik nie musi znać kierunku.</span>
+        s<span style="color: #666666">.</span>predkosc_kmh <span style="color: #666666">=</span> <span style="color: #008000">abs</span>(msg<span style="color: #666666">.</span>longitudinal_velocity) <span style="color: #666666">*</span> <span style="color: #666666">3.6</span>
+        s<span style="color: #666666">.</span>max_predkosc_kmh <span style="color: #666666">=</span> <span style="color: #008000">max</span>(s<span style="color: #666666">.</span>max_predkosc_kmh, s<span style="color: #666666">.</span>predkosc_kmh)
+
+        <span style="color: #3D7B7B; font-style: italic"># Czas z zegara węzła: przy use_sim_time:=true to czas symulacji.</span>
+        teraz <span style="color: #666666">=</span> <span style="color: #008000">self</span><span style="color: #666666">.</span>get_clock()<span style="color: #666666">.</span>now()
+        <span style="color: #008000; font-weight: bold">if</span> <span style="color: #008000">self</span><span style="color: #666666">.</span>ostatni_czas <span style="color: #AA22FF; font-weight: bold">is</span> <span style="color: #AA22FF; font-weight: bold">not</span> <span style="color: #008000; font-weight: bold">None</span>:
+            dt <span style="color: #666666">=</span> (teraz <span style="color: #666666">-</span> <span style="color: #008000">self</span><span style="color: #666666">.</span>ostatni_czas)<span style="color: #666666">.</span>nanoseconds <span style="color: #666666">/</span> <span style="color: #666666">1e9</span>
+            s<span style="color: #666666">.</span>dystans_m <span style="color: #666666">+=</span> <span style="color: #008000">abs</span>(msg<span style="color: #666666">.</span>longitudinal_velocity) <span style="color: #666666">*</span> dt   <span style="color: #3D7B7B; font-style: italic"># droga = prędkość × czas</span>
+            <span style="color: #008000; font-weight: bold">if</span> s<span style="color: #666666">.</span>tryb <span style="color: #666666">==</span> OperationModeState<span style="color: #666666">.</span>AUTONOMOUS:
+                s<span style="color: #666666">.</span>czas_autonomiczny_s <span style="color: #666666">+=</span> dt
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>ostatni_czas <span style="color: #666666">=</span> teraz
+
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">on_mode</span>(<span style="color: #008000">self</span>, msg):
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>stan<span style="color: #666666">.</span>tryb <span style="color: #666666">=</span> msg<span style="color: #666666">.</span>mode
+
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">podsumowanie</span>(<span style="color: #008000">self</span>):
+        s <span style="color: #666666">=</span> <span style="color: #008000">self</span><span style="color: #666666">.</span>stan
+        <span style="color: #008000; font-weight: bold">return</span> (<span style="color: #BA2121">f&#39;v=</span><span style="color: #A45A77; font-weight: bold">{</span>tekst(s<span style="color: #666666">.</span>predkosc_kmh)<span style="color: #A45A77; font-weight: bold">}</span><span style="color: #BA2121"> km/h, max=</span><span style="color: #A45A77; font-weight: bold">{</span>s<span style="color: #666666">.</span>max_predkosc_kmh<span style="color: #A45A77; font-weight: bold">:</span><span style="color: #BA2121">.1f</span><span style="color: #A45A77; font-weight: bold">}</span><span style="color: #BA2121"> km/h, &#39;</span>
+                <span style="color: #BA2121">f&#39;dystans=</span><span style="color: #A45A77; font-weight: bold">{</span>s<span style="color: #666666">.</span>dystans_m<span style="color: #A45A77; font-weight: bold">:</span><span style="color: #BA2121">.0f</span><span style="color: #A45A77; font-weight: bold">}</span><span style="color: #BA2121"> m, tryb=</span><span style="color: #A45A77; font-weight: bold">{</span>NAZWY_TRYBOW<span style="color: #666666">.</span>get(s<span style="color: #666666">.</span>tryb,<span style="color: #bbbbbb"> </span><span style="color: #BA2121">&quot;—&quot;</span>)<span style="color: #A45A77; font-weight: bold">}</span><span style="color: #BA2121">, &#39;</span>
+                <span style="color: #BA2121">f&#39;autonomicznie=</span><span style="color: #A45A77; font-weight: bold">{</span>s<span style="color: #666666">.</span>czas_autonomiczny_s<span style="color: #A45A77; font-weight: bold">:</span><span style="color: #BA2121">.0f</span><span style="color: #A45A77; font-weight: bold">}</span><span style="color: #BA2121"> s&#39;</span>)
+
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">main</span>():
+    rclpy<span style="color: #666666">.</span>init()
+    node <span style="color: #666666">=</span> Licznik()
+    node<span style="color: #666666">.</span>create_timer(<span style="color: #666666">1.0</span>, <span style="color: #008000; font-weight: bold">lambda</span>: node<span style="color: #666666">.</span>get_logger()<span style="color: #666666">.</span>info(node<span style="color: #666666">.</span>podsumowanie()))
+    <span style="color: #008000; font-weight: bold">try</span>:
+        rclpy<span style="color: #666666">.</span>spin(node)
+    <span style="color: #008000; font-weight: bold">except</span> <span style="color: #CB3F38; font-weight: bold">KeyboardInterrupt</span>:
+        <span style="color: #008000; font-weight: bold">pass</span>
+    <span style="color: #008000; font-weight: bold">finally</span>:
+        node<span style="color: #666666">.</span>destroy_node()
+        rclpy<span style="color: #666666">.</span>try_shutdown()
+</code></pre>
+
+<p>Co tu nowego:</p>
+<ul>
+<li><strong>Obiekt stanu</strong> (<code>StanLicznika</code>). Funkcje subskrypcji tylko zapisują do niego dane,
+  a wypisuje je ktoś inny (timer, a w kroku 6 okno). <code>None</code> oznacza „jeszcze nie wiem” i wtedy
+  wypisujemy „—” zamiast się wywracać.</li>
+<li><strong>Timer.</strong> <code>create_timer(1.0, f)</code> woła <code>f</code> co sekundę. Też w ramach <code>rclpy.spin()</code>.</li>
+<li><strong>Dystans</strong> to suma <code>prędkość × czas</code> między kolejnymi wiadomościami. Czas bierzemy z zegara
+  węzła. Z <code>use_sim_time:=true</code> to <strong>czas symulacji</strong> z tematu <code>/clock</code>, który płynie tak szybko,
+  jak naprawdę liczy się symulacja.</li>
+<li><strong>Dwie subskrypcje z różnym QoS.</strong> Wyjaśnienie w kroku 5.</li>
+</ul>
+<p>Dopisz komendę w <code>setup.py</code> (obok <code>predkosc</code>):</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code>            <span style="color: #BA2121">&#39;licznik = licznik_jazdy.licznik:main&#39;</span>,
+</code></pre>
+
+<p>i zbuduj ponownie (nowa komenda w <code>setup.py</code> zawsze wymaga <code>colcon build</code>):</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code><span style="color: #008000">cd</span><span style="color: #bbbbbb"> </span>~/ws<span style="color: #bbbbbb"> </span><span style="color: #666666">&amp;&amp;</span><span style="color: #bbbbbb"> </span>colcon<span style="color: #bbbbbb"> </span>build<span style="color: #bbbbbb"> </span>--symlink-install<span style="color: #bbbbbb"> </span>--packages-select<span style="color: #bbbbbb"> </span>licznik_jazdy
+ros2<span style="color: #bbbbbb"> </span>run<span style="color: #bbbbbb"> </span>licznik_jazdy<span style="color: #bbbbbb"> </span>licznik<span style="color: #bbbbbb"> </span>--ros-args<span style="color: #bbbbbb"> </span>-p<span style="color: #bbbbbb"> </span>use_sim_time:<span style="color: #666666">=</span><span style="color: #008000">true</span>
+</code></pre>
+
+<p><strong style="color: #1a7f37;">✔ Sprawdź:</strong></p>
+<ol>
+<li>Zaraz po starcie: <code>tryb=STOP</code> (albo AUTONOMOUS, jeśli auto jedzie), a nie <code>—</code>.</li>
+<li>Przejedź do celu na tej samej ulicy, przed najbliższym skrzyżowaniem. Dystans w logu
+   odpowiada odległości do celu (przykład: cel 150 m dalej → licznik pokazał 151 m),
+   a <code>autonomicznie</code> rośnie tylko w trybie AUTONOMOUS.</li>
+<li>Po dojeździe tryb sam zmienia się na STOP.</li>
+</ol>
+<h3 style="margin-top: 1.6em;">Krok 5. Eksperyment: po co ten QoS?</h3>
+<p>Tryb pracy Autoware zmienia się rzadko, więc jest publikowany tylko przy zmianie. Żeby węzeł
+uruchomiony później też go znał, Autoware publikuje go jako <em>transient local</em>: ostatnia wiadomość
+jest przechowywana i wysyłana każdemu nowemu subskrybentowi, ale tylko takiemu, który o nią
+poprosi tym samym QoS.</p>
+<ol>
+<li>W <code>licznik.py</code> zamień w subskrypcji trybu <code>API_QOS</code> na <code>10</code> (zwykły QoS z kolejką 10).</li>
+<li>Uruchom licznik ponownie. Budować nie trzeba: dzięki <code>--symlink-install</code> zmiana w istniejącym
+   pliku <code>.py</code> działa od razu.</li>
+<li>Obserwuj <code>tryb=—</code>. Zmieni się dopiero, gdy tryb się zmieni (np. kliknij Auto w RViz).</li>
+<li>Przywróć <code>API_QOS</code>.</li>
+</ol>
+<p><code>ros2 topic echo</code> z kroku 1 pokazywał stan od razu, bo sam dobiera QoS do nadawcy. Twój węzeł
+tego nie robi. Zasada: <strong>tematy <code>/api/...</code> zawsze subskrybuj z <code>API_QOS</code></strong>. Sprawdzisz to
+poleceniem <code>ros2 topic info -v &lt;temat&gt;</code> (pole <code>Durability</code>).</p>
+<h3 style="margin-top: 1.6em;">Krok 6. Okno</h3>
+<p>Teraz to samo w oknie. Jest jeden problem: <code>rclpy.spin()</code> nigdy nie wraca, a okno też ma
+swoją pętlę (<code>app.exec_()</code>), która musi działać w głównym wątku. Dlatego ROS działa
+w <strong>osobnym wątku</strong>, a okno co 100 ms tylko czyta obiekt stanu.</p>
+<p>Utwórz <code>licznik_jazdy/licznik_jazdy/okno.py</code>:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code><span style="color: #008000; font-weight: bold">import</span> <span style="color: #0000FF; font-weight: bold">signal</span>
+<span style="color: #008000; font-weight: bold">import</span> <span style="color: #0000FF; font-weight: bold">sys</span>
+<span style="color: #008000; font-weight: bold">import</span> <span style="color: #0000FF; font-weight: bold">threading</span>
+
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">licznik_jazdy.licznik</span> <span style="color: #008000; font-weight: bold">import</span> Licznik, NAZWY_TRYBOW, tekst
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">PyQt5.QtCore</span> <span style="color: #008000; font-weight: bold">import</span> QTimer
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">PyQt5.QtWidgets</span> <span style="color: #008000; font-weight: bold">import</span> QApplication, QLabel, QVBoxLayout, QWidget
+<span style="color: #008000; font-weight: bold">import</span> <span style="color: #0000FF; font-weight: bold">rclpy</span>
+<span style="color: #008000; font-weight: bold">from</span> <span style="color: #0000FF; font-weight: bold">rclpy.executors</span> <span style="color: #008000; font-weight: bold">import</span> SingleThreadedExecutor
+
+
+<span style="color: #008000; font-weight: bold">class</span> <span style="color: #0000FF; font-weight: bold">Okno</span>(QWidget):
+
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">__init__</span>(<span style="color: #008000">self</span>, node):
+        <span style="color: #008000">super</span>()<span style="color: #666666">.</span><span style="color: #0000FF">__init__</span>()
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>node <span style="color: #666666">=</span> node
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>setWindowTitle(<span style="color: #BA2121">&#39;Licznik jazdy&#39;</span>)
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>setStyleSheet(<span style="color: #BA2121">&#39;font-size: 20px&#39;</span>)
+
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>predkosc <span style="color: #666666">=</span> QLabel()
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>predkosc<span style="color: #666666">.</span>setStyleSheet(<span style="color: #BA2121">&#39;font-size: 64px; font-weight: bold&#39;</span>)
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>tryb <span style="color: #666666">=</span> QLabel()
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>dystans <span style="color: #666666">=</span> QLabel()
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>autonomicznie <span style="color: #666666">=</span> QLabel()
+
+        uklad <span style="color: #666666">=</span> QVBoxLayout(<span style="color: #008000">self</span>)
+        <span style="color: #008000; font-weight: bold">for</span> etykieta <span style="color: #AA22FF; font-weight: bold">in</span> (<span style="color: #008000">self</span><span style="color: #666666">.</span>predkosc, <span style="color: #008000">self</span><span style="color: #666666">.</span>tryb, <span style="color: #008000">self</span><span style="color: #666666">.</span>dystans, <span style="color: #008000">self</span><span style="color: #666666">.</span>autonomicznie):
+            uklad<span style="color: #666666">.</span>addWidget(etykieta)
+
+        <span style="color: #3D7B7B; font-style: italic"># Co 100 ms przepisz stan z węzła do etykiet.</span>
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>timer <span style="color: #666666">=</span> QTimer(<span style="color: #008000">self</span>)
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>timer<span style="color: #666666">.</span>timeout<span style="color: #666666">.</span>connect(<span style="color: #008000">self</span><span style="color: #666666">.</span>odswiez)
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>timer<span style="color: #666666">.</span>start(<span style="color: #666666">100</span>)
+
+    <span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">odswiez</span>(<span style="color: #008000">self</span>):
+        s <span style="color: #666666">=</span> <span style="color: #008000">self</span><span style="color: #666666">.</span>node<span style="color: #666666">.</span>stan
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>predkosc<span style="color: #666666">.</span>setText(<span style="color: #BA2121">f&#39;</span><span style="color: #A45A77; font-weight: bold">{</span>tekst(s<span style="color: #666666">.</span>predkosc_kmh,<span style="color: #bbbbbb"> </span><span style="color: #BA2121">&quot;</span><span style="color: #A45A77; font-weight: bold">{:.0f}</span><span style="color: #BA2121">&quot;</span>)<span style="color: #A45A77; font-weight: bold">}</span><span style="color: #BA2121"> km/h&#39;</span>)
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>tryb<span style="color: #666666">.</span>setText(<span style="color: #BA2121">f&#39;Tryb: </span><span style="color: #A45A77; font-weight: bold">{</span>NAZWY_TRYBOW<span style="color: #666666">.</span>get(s<span style="color: #666666">.</span>tryb,<span style="color: #bbbbbb"> </span><span style="color: #BA2121">&quot;—&quot;</span>)<span style="color: #A45A77; font-weight: bold">}</span><span style="color: #BA2121">&#39;</span>)
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>dystans<span style="color: #666666">.</span>setText(<span style="color: #BA2121">f&#39;Dystans: </span><span style="color: #A45A77; font-weight: bold">{</span>s<span style="color: #666666">.</span>dystans_m<span style="color: #A45A77; font-weight: bold">:</span><span style="color: #BA2121">.0f</span><span style="color: #A45A77; font-weight: bold">}</span><span style="color: #BA2121"> m&#39;</span>)
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>autonomicznie<span style="color: #666666">.</span>setText(<span style="color: #BA2121">f&#39;Jazda autonomiczna: </span><span style="color: #A45A77; font-weight: bold">{</span>s<span style="color: #666666">.</span>czas_autonomiczny_s<span style="color: #A45A77; font-weight: bold">:</span><span style="color: #BA2121">.0f</span><span style="color: #A45A77; font-weight: bold">}</span><span style="color: #BA2121"> s&#39;</span>)
+
+
+<span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">main</span>():
+    rclpy<span style="color: #666666">.</span>init()
+    node <span style="color: #666666">=</span> Licznik(<span style="color: #BA2121">&#39;licznik_jazdy_okno&#39;</span>)   <span style="color: #3D7B7B; font-style: italic"># inna nazwa niż węzeł z licznik.py!</span>
+
+    <span style="color: #3D7B7B; font-style: italic"># ROS w osobnym wątku: spin() czeka na wiadomości i nie wraca, więc w głównym wątku</span>
+    <span style="color: #3D7B7B; font-style: italic"># zablokowałby okno. Własny executor, żeby na końcu móc go zatrzymać.</span>
+    executor <span style="color: #666666">=</span> SingleThreadedExecutor()
+    executor<span style="color: #666666">.</span>add_node(node)
+    watek <span style="color: #666666">=</span> threading<span style="color: #666666">.</span>Thread(target<span style="color: #666666">=</span>executor<span style="color: #666666">.</span>spin)
+    watek<span style="color: #666666">.</span>start()
+
+    app <span style="color: #666666">=</span> QApplication(sys<span style="color: #666666">.</span>argv)
+    okno <span style="color: #666666">=</span> Okno(node)
+    okno<span style="color: #666666">.</span>show()
+    signal<span style="color: #666666">.</span>signal(signal<span style="color: #666666">.</span>SIGINT, <span style="color: #008000; font-weight: bold">lambda</span> <span style="color: #666666">*</span>_: app<span style="color: #666666">.</span>quit())   <span style="color: #3D7B7B; font-style: italic"># Ctrl+C zamyka okno</span>
+    app<span style="color: #666666">.</span>exec_()
+
+    <span style="color: #3D7B7B; font-style: italic"># Po zamknięciu okna: zatrzymaj wątek ROS i dopiero wtedy sprzątaj.</span>
+    executor<span style="color: #666666">.</span>shutdown()
+    watek<span style="color: #666666">.</span>join()
+    node<span style="color: #666666">.</span>destroy_node()
+    rclpy<span style="color: #666666">.</span>try_shutdown()
+</code></pre>
+
+<p>Okno używa tej samej klasy <code>Licznik</code> co krok 4. Nic nie trzeba pisać drugi raz.</p>
+<p>Trzy rzeczy, które łatwo zepsuć:</p>
+<ul>
+<li><strong>Kolejność na końcu.</strong> Najpierw <code>executor.shutdown()</code> i <code>watek.join()</code>, dopiero potem
+  <code>destroy_node()</code>. Odwrotnie program kończy się błędem <code>Segmentation fault</code>.</li>
+<li><strong>Nie zastępuj wątku wywołaniem <code>rclpy.spin_once()</code> w timerze okna.</strong> Obsługuje ono jedną
+  wiadomość na wywołanie, czyli 10 na sekundę przy timerze 100 ms, a sama prędkość przychodzi
+  20 razy na sekundę. Licznik by się spóźniał coraz bardziej.</li>
+<li><strong>Ctrl+C.</strong> Bez linii z <code>signal.signal(...)</code> okno Qt nie zamyka się po Ctrl+C w terminalu.</li>
+</ul>
+<p>Dopisz <code>'okno = licznik_jazdy.okno:main',</code> w <code>setup.py</code>, zbuduj i uruchom:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code><span style="color: #008000">cd</span><span style="color: #bbbbbb"> </span>~/ws<span style="color: #bbbbbb"> </span><span style="color: #666666">&amp;&amp;</span><span style="color: #bbbbbb"> </span>colcon<span style="color: #bbbbbb"> </span>build<span style="color: #bbbbbb"> </span>--symlink-install<span style="color: #bbbbbb"> </span>--packages-select<span style="color: #bbbbbb"> </span>licznik_jazdy
+ros2<span style="color: #bbbbbb"> </span>run<span style="color: #bbbbbb"> </span>licznik_jazdy<span style="color: #bbbbbb"> </span>okno<span style="color: #bbbbbb"> </span>--ros-args<span style="color: #bbbbbb"> </span>-p<span style="color: #bbbbbb"> </span>use_sim_time:<span style="color: #666666">=</span><span style="color: #008000">true</span>
+</code></pre>
+
+<p>Okno otwiera się na ekranie hosta tak samo jak RViz. Jeśli zamiast okna pojawia się błąd
+<code>could not connect to display</code>, uruchom na hoście <code>xhost +local:docker</code>.</p>
+<p><strong style="color: #1a7f37;">✔ Sprawdź:</strong> okno pokazuje te same wartości co log z kroku 4 (możesz uruchomić oba naraz)
+i zamyka się czysto, bez błędów, zarówno krzyżykiem, jak i przez Ctrl+C.</p>
+<h3 style="margin-top: 1.6em;">Krok 7. Dwa błędy, które warto zobaczyć raz</h3>
+<p><strong>Ta sama nazwa węzła dwa razy.</strong> Uruchom <code>ros2 run licznik_jazdy licznik</code> w dwóch terminalach
+naraz. <code>ros2 node list | sort | uniq -d</code> pokaże <code>/licznik_jazdy</code>. Teraz spróbuj włączyć tryb
+autonomiczny w RViz: <strong>nie da się</strong>. Autoware traktuje powtórzoną nazwę jako błąd systemu
+(<code>duplicated_node_checker</code>). Zamknij jeden z liczników i Auto znów działa. Drugą kopię
+można uruchomić pod inną nazwą:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code>ros2<span style="color: #bbbbbb"> </span>run<span style="color: #bbbbbb"> </span>licznik_jazdy<span style="color: #bbbbbb"> </span>licznik<span style="color: #bbbbbb"> </span>--ros-args<span style="color: #bbbbbb"> </span>-p<span style="color: #bbbbbb"> </span>use_sim_time:<span style="color: #666666">=</span><span style="color: #008000">true</span><span style="color: #bbbbbb"> </span>-r<span style="color: #bbbbbb"> </span>__node:<span style="color: #666666">=</span>licznik_2
+</code></pre>
+
+<p><strong>Brak <code>use_sim_time</code>.</strong> Uruchom obok siebie licznik z <code>use_sim_time:=true</code> i bez tej opcji
+(pod inną nazwą, jak wyżej) i przejedź trasę. Bez czasu symulacji węzeł liczy czas zegarem
+komputera. Póki symulacja nadąża za czasem rzeczywistym, wyniki są takie same. Na wspólnym
+serwerze, gdy symulacja zwalnia, licznik bez czasu symulacji pokazuje za duży dystans: liczy
+prędkość z symulacji razy czas z prawdziwego zegara. Zasada: <strong>zawsze <code>use_sim_time:=true</code></strong>.</p>
+<h3 style="margin-top: 1.6em;">Gdy coś nie działa</h3>
+<div class="table-responsive"><table class="table table-bordered table-sm">
+<thead class="thead-light">
+<tr>
+<th>Objaw</th>
+<th>Przyczyna</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Package 'licznik_jazdy' not found</code></td>
+<td>brak <code>source install/setup.bash</code> po pierwszym buildzie</td>
+</tr>
+<tr>
+<td><code>No executable found</code></td>
+<td>komenda nie dopisana w <code>setup.py</code> albo brak <code>colcon build</code> po dopisaniu</td>
+</tr>
+<tr>
+<td><code>ros2 pkg create: error: ... package_name</code></td>
+<td>nazwa pakietu po <code>--dependencies</code> (krok 2)</td>
+</tr>
+<tr>
+<td>węzeł działa, ale nic nie wypisuje</td>
+<td>literówka w nazwie tematu (porównaj z <code>ros2 topic list</code>) albo Autoware nie działa</td>
+</tr>
+<tr>
+<td><code>tryb=—</code> mimo działającego Autoware</td>
+<td>brak <code>API_QOS</code> przy temacie <code>/api/...</code> (krok 5)</td>
+</tr>
+<tr>
+<td>przycisk Auto w RViz nieaktywny</td>
+<td>dwa węzły o tej samej nazwie (krok 7)</td>
+</tr>
+<tr>
+<td>dziwne czasy i dystanse</td>
+<td>brak <code>use_sim_time:=true</code></td>
+</tr>
+<tr>
+<td><code>could not connect to display</code></td>
+<td>na hoście: <code>xhost +local:docker</code></td>
+</tr>
+<tr>
+<td><code>Segmentation fault</code> przy zamykaniu okna</td>
+<td>zła kolejność sprzątania (krok 6)</td>
+</tr>
+</tbody>
+</table></div>
+<h3 style="margin-top: 1.6em;">Od licznika do panelu kierowcy</h3>
+<p>W <a target="_blank" rel="noopener" href="https://github.com/PanHassan/Carla-Autoware-Bridge/blob/autoware-1.9-carla-0.9.16/projekty/01-panel-kierowcy.md">projekcie 1</a> robisz to samo na większą skalę:</p>
+<div class="table-responsive"><table class="table table-bordered table-sm">
+<thead class="thead-light">
+<tr>
+<th>W tutorialu</th>
+<th>W projekcie 1</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>2 tematy</td>
+<td>6 tematów, w tym trzy <code>/api/...</code> i limit prędkości (wszystkie z <code>API_QOS</code>)</td>
+</tr>
+<tr>
+<td><code>StanLicznika</code></td>
+<td>obiekt stanu z pozycją auta i celem trasy, odległość do celu</td>
+</tr>
+<tr>
+<td>log co sekundę</td>
+<td>to samo (zadanie 1)</td>
+</tr>
+<tr>
+<td>okno z etykietami</td>
+<td>kolory: czerwony licznik po przekroczeniu limitu, kolor trybu, komunikat „Przejmij sterowanie”</td>
+</tr>
+</tbody>
+</table></div>
+<p>Typ i pola nowych tematów sprawdzisz tak jak w kroku 1: <code>ros2 topic info -v</code>
+i <code>ros2 interface show</code>.</p>

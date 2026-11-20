@@ -7,9 +7,10 @@
 - przeładowywać mapy - to wyrzuciłoby z symulacji wszystkich pozostałych.
 
 Dodatkowo (wydajność przy zdalnym serwerze) stan świateł auta jest zapamiętywany lokalnie,
-a kamery dostają sensor_tick (CARLA_CAMERA_HZ, domyślnie 10 Hz). Bez tego CARLA renderuje
-i wysyła obraz z każdej kamery w każdym kroku, choć most publikuje go w ROS najwyżej ~10 Hz -
-przy zdalnym serwerze to kilkaset MB/s przez sieć.
+a kamery dostają sensor_tick (CARLA_CAMERA_HZ, domyślnie 5 Hz) i mniejszy obraz
+(CARLA_CAMERA_SIZE, domyślnie 800x450). Bez tego CARLA renderuje i wysyła obraz z każdej kamery
+w każdym kroku (1080x720 przy 20 Hz to ~60 MB/s) - więcej niż przeniesie sieć 100 Mb/s, a CARLA
+czeka z kolejnym krokiem, aż dane zejdą do klienta.
 
 Importowany na początku carla_autoware.py (patrz Dockerfile).
 """
@@ -27,7 +28,9 @@ _CLIENT_ID = f"{socket.gethostname()}-{os.getpid()}"
 # Nazwa auta tego klienta (ustawia carla-aw). Master usuwa je, gdy klient zniknie bez sprzątania.
 _EGO_ROLE = os.environ.get("CARLA_EGO_ROLE", "-")
 _sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-_CAMERA_HZ = float(os.environ.get("CARLA_CAMERA_HZ", "10"))
+_CAMERA_HZ = float(os.environ.get("CARLA_CAMERA_HZ", "5"))
+# Rozmiar obrazu kamer, np. "800x450"; pusty = rozmiar z konfiguracji czujników Autoware.
+_CAMERA_SIZE = os.environ.get("CARLA_CAMERA_SIZE", "800x450")
 
 
 def _tick(self, seconds=10.0):
@@ -66,6 +69,10 @@ _configure_camera_attributes = carla_wrapper.SensorWrapper._configure_camera_att
 def _configure_camera_with_tick(self, bp, spec):
     _configure_camera_attributes(self, bp, spec)
     bp.set_attribute("sensor_tick", str(1.0 / _CAMERA_HZ))
+    if _CAMERA_SIZE:
+        width, height = _CAMERA_SIZE.split("x")
+        bp.set_attribute("image_size_x", width)
+        bp.set_attribute("image_size_y", height)
 
 
 carla_wrapper.SensorWrapper._configure_camera_attributes = _configure_camera_with_tick

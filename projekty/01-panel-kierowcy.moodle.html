@@ -1,0 +1,115 @@
+<p><strong>Poziom:</strong> ★☆☆ · <strong>Czas:</strong> 2 zajęcia · <strong>Zespół:</strong> 1–2 osoby</p>
+<h3 style="margin-top: 1.6em;">Cel</h3>
+<p>Napisz okno, które pokazuje, co „myśli” autonomiczne auto: prędkość, obowiązujący limit,
+tryb pracy, stan trasy i odległość do celu. Takie panele są w każdym aucie z systemami
+wspomagania kierowcy, a tutaj poznasz przy okazji najważniejsze tematy Autoware.</p>
+<h3 style="margin-top: 1.6em;">Czego się nauczysz</h3>
+<ul>
+<li>subskrypcji wielu tematów ROS 2 w jednym węźle,</li>
+<li>tematów stanu Autoware AD API i ich QoS (<em>transient local</em>),</li>
+<li>łączenia ROS 2 z interfejsem graficznym (PyQt5 albo pygame).</li>
+</ul>
+<h3 style="margin-top: 1.6em;">Przygotowanie</h3>
+<p>Jeśli to Twój pierwszy kontakt z ROS 2, najpierw przerób
+<a target="_blank" rel="noopener" href="https://github.com/PanHassan/Carla-Autoware-Bridge/blob/autoware-1.9-carla-0.9.16/projekty/00-tutorial-licznik-jazdy.md">tutorial „Licznik jazdy”</a>.</p>
+<ol>
+<li>Uruchom Autoware (<code>carla-aw</code>) i przejedź do dowolnego celu, jak w README.</li>
+<li>W drugim terminalu (<code>./scripts/aw_shell.sh</code>) obejrzyj tematy z tabeli poniżej:
+   <code>ros2 topic echo</code>, <code>ros2 topic info -v</code>.</li>
+<li>Utwórz pakiet <code>panel_kierowcy</code> (<a target="_blank" rel="noopener" href="https://github.com/PanHassan/Carla-Autoware-Bridge/blob/autoware-1.9-carla-0.9.16/projekty/README.md#nowy-pakiet-ros-2">wspólne wskazówki</a>).</li>
+</ol>
+<div class="table-responsive"><table class="table table-bordered table-sm">
+<thead class="thead-light">
+<tr>
+<th>Informacja</th>
+<th>Temat</th>
+<th>Typ</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>prędkość</td>
+<td><code>/vehicle/status/velocity_status</code></td>
+<td><code>autoware_vehicle_msgs/msg/VelocityReport</code></td>
+</tr>
+<tr>
+<td>pozycja</td>
+<td><code>/localization/kinematic_state</code></td>
+<td><code>nav_msgs/msg/Odometry</code></td>
+</tr>
+<tr>
+<td>tryb pracy (stop / autonomous / …)</td>
+<td><code>/api/operation_mode/state</code></td>
+<td><code>autoware_adapi_v1_msgs/msg/OperationModeState</code></td>
+</tr>
+<tr>
+<td>stan trasy</td>
+<td><code>/api/routing/state</code></td>
+<td><code>autoware_adapi_v1_msgs/msg/RouteState</code></td>
+</tr>
+<tr>
+<td>cel trasy</td>
+<td><code>/api/routing/route</code></td>
+<td><code>autoware_adapi_v1_msgs/msg/Route</code></td>
+</tr>
+<tr>
+<td>obowiązujący limit prędkości</td>
+<td><code>/planning/scenario_planning/current_max_velocity</code></td>
+<td>sprawdź <code>ros2 topic info</code></td>
+</tr>
+</tbody>
+</table></div>
+<h3 style="margin-top: 1.6em;">Zadania</h3>
+<ol>
+<li><strong>Węzeł danych.</strong> Napisz węzeł, który subskrybuje wszystkie tematy z tabeli i trzyma ostatnie
+   wartości w jednym obiekcie stanu. Wypisuj go w logu co sekundę (jak <code>speed_monitor</code>).
+   Tematy <code>/api/...</code> subskrybuj z QoS <em>transient local</em> (patrz <code>drive_to_goal.py</code>).</li>
+<li>
+<p><strong>Okno.</strong> Wyświetl stan w oknie: duży licznik prędkości w km/h, limit, tryb pracy jako
+   kolorowa etykieta (np. zielona dla AUTONOMOUS), stan trasy, odległość do celu w linii prostej.
+    ROS odbiera wiadomości w osobnym wątku, a okno tylko czyta obiekt stanu. Wzór (wątek,
+    executor i poprawne zamykanie) jest w kroku 6 <a target="_blank" rel="noopener" href="https://github.com/PanHassan/Carla-Autoware-Bridge/blob/autoware-1.9-carla-0.9.16/projekty/00-tutorial-licznik-jazdy.md">tutorialu</a>.
+    Okno otwiera się z kontenera tak samo jak RViz (wymaga <code>xhost +local:docker</code> na hoście).</p>
+<ul>
+<li>PyQt5: <code>QTimer</code> co 100 ms odświeża etykiety.</li>
+<li>pygame: w pętli gry rysujesz aktualny stan.</li>
+</ul>
+</li>
+<li>
+<p><strong>Ostrzeżenia.</strong> Licznik zmienia kolor na czerwony, gdy prędkość przekracza limit o więcej
+   niż 2 km/h. Gdy tryb pracy zmienia się z AUTONOMOUS na inny, panel pokazuje komunikat
+   „Przejmij sterowanie”, ale nie po zwykłym dojeździe do celu (wtedy Autoware samo przechodzi
+   w STOP, a stan trasy to ARRIVED).</p>
+</li>
+<li><strong>Test.</strong> Przejedź trasę w trybie autonomicznym, zmieniając limit suwakiem <em>Set Velocity
+   Limit</em> w RViz. Sprawdź, czy panel nadąża i pokazuje poprawne wartości. W tej konfiguracji
+   Autoware jedzie najwyżej 15 km/h, więc suwakiem limit da się tylko obniżyć.</li>
+</ol>
+<h3 style="margin-top: 1.6em;">Wskazówki</h3>
+<ul>
+<li><code>OperationModeState.mode</code> to liczba. Stałe z nazwami (<code>AUTONOMOUS</code>, <code>STOP</code>, …) są w samej
+  wiadomości: <code>ros2 interface show autoware_adapi_v1_msgs/msg/OperationModeState</code>.</li>
+<li>Cel jest w <code>Route.data[0].goal</code>. Lista <code>data</code> jest pusta, dopóki trasa nie jest ustawiona.
+  Nie używaj <code>/planning/mission_planning/goal</code>: tam publikuje tylko narzędzie <em>2D Goal Pose</em>
+  w RViz, więc przy <code>drive_to_goal</code> nic by nie przyszło.</li>
+<li>Panel ma działać także wtedy, gdy któregoś tematu jeszcze nie ma (np. przed ustawieniem celu).
+  Pokaż wtedy „—” zamiast wywracać program.</li>
+<li>Nie blokuj pętli GUI: żadnych <code>rclpy.spin()</code> ani <code>time.sleep()</code> w wątku okna.
+  Nie wołaj też <code>rclpy.spin_once()</code> w timerze okna: obsługuje jeden callback na wywołanie,
+  a sama prędkość i pozycja to ok. 35 wiadomości/s, więc panel by się spóźniał.</li>
+<li>Ctrl+C w terminalu nie zamknie okna Qt sam z siebie. Dodaj
+  <code>signal.signal(signal.SIGINT, lambda *_: app.quit())</code>.</li>
+</ul>
+<h3 style="margin-top: 1.6em;">Co oddajesz</h3>
+<ul>
+<li>pakiet <code>panel_kierowcy</code> w <code>ws/src/</code> budujący się bez błędów (<code>colcon build</code>),</li>
+<li>krótkie nagranie ekranu (do 1 min): przejazd autonomiczny ze zmianą limitu prędkości,
+  widoczne RViz i panel,</li>
+<li><code>README.md</code> w pakiecie: jak uruchomić i co pokazuje każde pole.</li>
+</ul>
+<h3 style="margin-top: 1.6em;">Dla chętnych</h3>
+<ul>
+<li>wykres prędkości i limitu z ostatnich 60 s (matplotlib osadzony w PyQt5),</li>
+<li>liczba i odległość najbliższego obiektu z <code>/perception/object_recognition/objects</code>,</li>
+<li>przycisk „Zatrzymaj” wywołujący <code>/api/operation_mode/change_to_stop</code>.</li>
+</ul>

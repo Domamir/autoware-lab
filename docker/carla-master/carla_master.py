@@ -53,6 +53,8 @@ TM_PORT = 8000
 # Kamera okna CARLA: "follow" = śledzi auta, "off" = sterowana ręcznie w oknie.
 SPECTATOR = os.environ.get("CARLA_SPECTATOR", "top")
 SPECTATOR_SWITCH = float(os.environ.get("CARLA_SPECTATOR_SWITCH", "20"))
+# Limit czasu na odpowiedź CARLA (krok świata, zapytania Traffic Managera).
+TIMEOUT = float(os.environ.get("CARLA_TIMEOUT", "60"))
 # Co ile sekund wypisywać statystyki (0 = nigdy).
 STATS_PERIOD = float(os.environ.get("CARLA_STATS_PERIOD", "30"))
 
@@ -71,6 +73,10 @@ def connect():
             client = carla.Client(HOST, PORT)
             client.set_timeout(10.0)
             client.get_world()
+            # Długi limit: CARLA potrafi stać kilkanaście sekund, gdy wysyła dane czujników do
+            # wolnego klienta (np. przez Wi-Fi). Przy 10 s wątek Traffic Managera kończył
+            # cały proces błędem C++ (TimeoutException), a wtedy wypadali wszyscy klienci.
+            client.set_timeout(TIMEOUT)
             return client
         except RuntimeError:
             print(f"Czekam na CARLA ({HOST}:{PORT})...", flush=True)
@@ -326,7 +332,12 @@ def main():
             if spectator:
                 spectator.update()
             t0 = time.monotonic()
-            frame = world.tick()
+            try:
+                frame = world.tick()
+            except RuntimeError as error:
+                # Krok trwał dłużej niż TIMEOUT - zwykle zator w sieci. Próbujemy dalej.
+                print(f"Krok świata nie powiódł się ({error}), ponawiam", flush=True)
+                continue
             t1 = time.monotonic()
             clients.wait_for(frame)
             now = time.monotonic()
