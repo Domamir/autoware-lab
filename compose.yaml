@@ -1,0 +1,83 @@
+# CARLA 0.9.16 + Autoware 1.9.0 (autoware_carla_interface). Wersje i opcje w pliku .env.
+#
+# Serwer CARLA (README, "Serwer CARLA"):
+#   ./scripts/carla_server.sh [--window]   # carla + carla-master, z oknem lub bez
+#
+# Terminal z Autoware (README, "Terminal (Autoware)"): CARLA_HOST=<adres serwera> w .env, potem
+#   xhost +local:docker
+#   docker compose up -d autoware
+#   ./scripts/aw_shell.sh                  # terminal w kontenerze Autoware
+#   carla-aw                               # (w kontenerze) uruchom Autoware
+#   docker compose down                    # zatrzymaj
+
+x-common: &common
+  network_mode: host
+  ipc: host
+  privileged: true
+  environment: &env
+    DISPLAY: ${DISPLAY:-:0}
+    QT_X11_NO_MITSHM: "1"
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: all
+  # GPU przez CDI: w przeciwieństwie do `driver: nvidia` montuje też sterownik Vulkan NVIDII
+  # (nvidia_icd.json). Bez niego CARLA renderuje na CPU (lavapipe) i jest bezużyteczna.
+  # Wymaga Docker >= 25 i NVIDIA Container Toolkit >= 1.17 (spec: `nvidia-ctk cdi list`).
+  devices:
+    - nvidia.com/gpu=all
+
+services:
+  carla:
+    <<: *common
+    image: ${CARLA_IMAGE:-carlasim/carla:${CARLA_VERSION}}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    command: bash -c "./CarlaUE4.sh ${CARLA_ARGS} -quality-level=${CARLA_QUALITY:-Epic}"
+    restart: unless-stopped
+
+  # Jedyny proces, który taktuje świat CARLA: ładuje CARLA_MAP i włącza tryb synchroniczny.
+  # Mosty w kontenerach Autoware tylko czekają na kolejne kroki, więc do jednej CARLA może
+  # podłączyć się kilka Autoware naraz.
+  carla-master:
+    network_mode: host
+    build:
+      context: docker/carla-master
+      args:
+        CARLA_VERSION: ${CARLA_VERSION}
+    image: ${CARLA_MASTER_IMAGE:-ghcr.io/panhassan/carla-master}:${CARLA_VERSION}
+    environment:
+      CARLA_HOST: localhost
+      CARLA_PORT: ${CARLA_PORT:-2000}
+      CARLA_MAP: ${CARLA_MAP:-Town01}
+      CARLA_MASTER_PORT: ${CARLA_MASTER_PORT:-2005}
+      CARLA_STEP_TIMEOUT: ${CARLA_STEP_TIMEOUT:-0.25}
+      CARLA_SPECTATOR: ${CARLA_SPECTATOR:-top}
+      CARLA_NPC_VEHICLES: ${CARLA_NPC_VEHICLES:-0}
+    depends_on:
+      - carla
+    restart: unless-stopped
+
+  autoware:
+    <<: *common
+    build:
+      context: docker/autoware
+      args:
+        ROS_DISTRO: ${ROS_DISTRO}
+        CARLA_VERSION: ${CARLA_VERSION}
+    # Gotowy obraz z GHCR (docker compose pull). `docker compose build autoware` buduje go
+    # lokalnie z Dockerfile'a, a ./scripts/publish_image.sh wypycha nową wersję do rejestru.
+    image: ${AUTOWARE_IMAGE:-ghcr.io/panhassan/carla-autoware}:${AUTOWARE_VERSION}-${ROS_DISTRO}
+    environment:
+      <<: *env
+      HOST_UID: ${HOST_UID:-1000}
+      HOST_GID: ${HOST_GID:-1000}
+      AUTOWARE_VERSION: ${AUTOWARE_VERSION}
+      CARLA_HOST: ${CARLA_HOST:-localhost}
+      CARLA_PORT: ${CARLA_PORT:-2000}
+      CARLA_MASTER_PORT: ${CARLA_MASTER_PORT:-2005}
+      CARLA_CAMERA_SIZE: ${CARLA_CAMERA_SIZE:-800x450}
+      CARLA_CAMERA_HZ: ${CARLA_CAMERA_HZ:-5}
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${AUTOWARE_DATA}:/home/aw/autoware_data
+      - ./ws:/home/aw/ws
+    command: sleep infinity
