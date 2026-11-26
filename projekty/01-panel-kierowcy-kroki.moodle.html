@@ -1,0 +1,291 @@
+<h3 style="margin-top: 1.6em;">Wprowadzenie</h3>
+<p>W tym projekcie napiszesz okno, które pokazuje, co „myśli” autonomiczne auto. Gotowy panel
+wygląda mniej więcej tak:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code>+-----------------------------+
+|             15              |
+|            km/h             |
+|     [   AUTONOMOUS   ]      |
+|  Limit             15 km/h  |
+|  Trasa                 SET  |
+|  Do celu              83 m  |
++-----------------------------+
+</code></pre>
+
+<p>Projekt jest podzielony na 8 kroków. Każdy kończy się punktem <strong style="color: #1a7f37;">✔ Sprawdź</strong>: nie idź dalej,
+dopóki nie działa. Proponowany podział: na pierwszych zajęciach kroki 1–5 (węzeł danych
+w terminalu), na drugich kroki 6–8 (okno, ostrzeżenia, oddanie).</p>
+<p><strong>Zanim zaczniesz:</strong> przerób tutorial „Licznik jazdy”. Projekt korzysta z trzech rzeczy,
+które tam poznasz: obiektu stanu z timerem (krok 4 tutorialu), QoS <code>API_QOS</code> (krok 5)
+i okna PyQt5 z ROS w osobnym wątku (krok 6). Kod z tutorialu możesz kopiować.</p>
+<p><strong>Co oddajesz</strong> (szczegóły w kroku 8): pakiet <code>panel_kierowcy</code>, nagranie ekranu do 1 minuty
+i <code>README.md</code> pakietu.</p>
+<h3 style="margin-top: 1.6em;">Krok 1. Rozpoznaj tematy</h3>
+<p>Uruchom Autoware (<code>carla-aw</code>) i ustaw dowolny cel w RViz (<em>2D Goal Pose</em>). Niektóre tematy
+pojawiają się dopiero, gdy Autoware pierwszy raz zaplanuje trasę. W drugim terminalu
+(<code>./scripts/aw_shell.sh</code>) obejrzyj tematy, z których zbudujesz panel:</p>
+<div class="table-responsive"><table class="table table-bordered table-sm">
+<thead class="thead-light">
+<tr>
+<th>Informacja</th>
+<th>Temat</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>prędkość</td>
+<td><code>/vehicle/status/velocity_status</code></td>
+</tr>
+<tr>
+<td>pozycja auta</td>
+<td><code>/localization/kinematic_state</code></td>
+</tr>
+<tr>
+<td>tryb pracy</td>
+<td><code>/api/operation_mode/state</code></td>
+</tr>
+<tr>
+<td>stan trasy</td>
+<td><code>/api/routing/state</code></td>
+</tr>
+<tr>
+<td>cel trasy</td>
+<td><code>/api/routing/route</code></td>
+</tr>
+<tr>
+<td>obowiązujący limit prędkości</td>
+<td><code>/planning/scenario_planning/current_max_velocity</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Dla każdego tematu:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code>ros2<span style="color: #bbbbbb"> </span>topic<span style="color: #bbbbbb"> </span>info<span style="color: #bbbbbb"> </span>-v<span style="color: #bbbbbb"> </span>/planning/scenario_planning/current_max_velocity<span style="color: #bbbbbb">   </span><span style="color: #3D7B7B; font-style: italic"># Type i Durability</span>
+ros2<span style="color: #bbbbbb"> </span>interface<span style="color: #bbbbbb"> </span>show<span style="color: #bbbbbb"> </span>&lt;typ<span style="color: #bbbbbb"> </span>z<span style="color: #bbbbbb"> </span>poprzedniej<span style="color: #bbbbbb"> </span>komendy&gt;<span style="color: #bbbbbb">                         </span><span style="color: #3D7B7B; font-style: italic"># pola wiadomości</span>
+ros2<span style="color: #bbbbbb"> </span>topic<span style="color: #bbbbbb"> </span><span style="color: #008000">echo</span><span style="color: #bbbbbb"> </span>/api/routing/route<span style="color: #bbbbbb">                                      </span><span style="color: #3D7B7B; font-style: italic"># przykładowa wiadomość</span>
+</code></pre>
+
+<p>Zapisz w notatkach: typ wiadomości, pole z potrzebną wartością i jednostkę, a także
+<code>Durability</code> u nadawcy (VOLATILE albo TRANSIENT_LOCAL).</p>
+<p><strong style="color: #1a7f37;">✔ Sprawdź:</strong></p>
+<ol>
+<li>Limit prędkości jest typu <code>autoware_internal_planning_msgs/msg/VelocityLimit</code>, a wartość
+   jest w polu <code>max_velocity</code> w m/s.</li>
+<li>Trzy tematy <code>/api/...</code> i limit mają <code>TRANSIENT_LOCAL</code>. Te cztery będziesz subskrybować
+   z <code>API_QOS</code>.</li>
+<li>Wiesz, gdzie w wiadomości <code>Route</code> jest pozycja celu (podpowiedź: <code>data</code> to lista).</li>
+<li>Po kliknięciu <strong>Clear Route</strong> w RViz lista <code>data</code> w <code>/api/routing/route</code> jest pusta.</li>
+</ol>
+<p>Nie używaj tematu <code>/planning/mission_planning/goal</code>. Publikuje tam tylko narzędzie
+<em>2D Goal Pose</em> w RViz, więc gdy trasę ustawi <code>drive_to_goal</code>, nic by tam nie przyszło.</p>
+<h3 style="margin-top: 1.6em;">Krok 2. Pakiet</h3>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code><span style="color: #008000">cd</span><span style="color: #bbbbbb"> </span>~/ws/src
+ros2<span style="color: #bbbbbb"> </span>pkg<span style="color: #bbbbbb"> </span>create<span style="color: #bbbbbb"> </span>panel_kierowcy<span style="color: #bbbbbb"> </span>--build-type<span style="color: #bbbbbb"> </span>ament_python<span style="color: #bbbbbb"> </span>--license<span style="color: #bbbbbb"> </span>Apache-2.0<span style="color: #bbbbbb"> </span><span style="color: #AA5D1F; font-weight: bold">\</span>
+<span style="color: #bbbbbb">    </span>--dependencies<span style="color: #bbbbbb"> </span>rclpy<span style="color: #bbbbbb"> </span>nav_msgs<span style="color: #bbbbbb"> </span>autoware_vehicle_msgs<span style="color: #bbbbbb"> </span>autoware_adapi_v1_msgs<span style="color: #bbbbbb"> </span><span style="color: #AA5D1F; font-weight: bold">\</span>
+<span style="color: #bbbbbb">    </span>autoware_internal_planning_msgs
+</code></pre>
+
+<p>Kod podzielisz na dwa pliki w <code>panel_kierowcy/panel_kierowcy/</code>:</p>
+<ul>
+<li><code>stan.py</code>: węzeł danych (kroki 3–5). Uruchomiony sam wypisuje stan w terminalu.</li>
+<li><code>panel.py</code>: okno (kroki 6–7). Korzysta z węzła z <code>stan.py</code>.</li>
+</ul>
+<p>Dopisz od razu obie komendy w <code>setup.py</code>:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code>        <span style="color: #BA2121">&#39;console_scripts&#39;</span>: [
+            <span style="color: #BA2121">&#39;stan = panel_kierowcy.stan:main&#39;</span>,
+            <span style="color: #BA2121">&#39;panel = panel_kierowcy.panel:main&#39;</span>,
+        ],
+</code></pre>
+
+<p><strong style="color: #1a7f37;">✔ Sprawdź:</strong> <code>cd ~/ws &amp;&amp; colcon build --symlink-install --packages-select panel_kierowcy</code>
+kończy się <code>Summary: 1 package finished</code>. Pliki <code>stan.py</code> i <code>panel.py</code> mogą być na razie puste,
+komenda <code>ros2 run</code> zadziała dopiero po kroku 3.</p>
+<h3 style="margin-top: 1.6em;">Krok 3. Węzeł danych: prędkość i pozycja</h3>
+<p>Zacznij od dwóch najprostszych tematów, tak jak licznik w tutorialu. W <code>stan.py</code>:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code><span style="color: #AA22FF">@dataclass</span>
+<span style="color: #008000; font-weight: bold">class</span> <span style="color: #0000FF; font-weight: bold">StanPojazdu</span>:
+    predkosc_kmh: <span style="color: #008000">float</span> <span style="color: #666666">|</span> <span style="color: #008000; font-weight: bold">None</span> <span style="color: #666666">=</span> <span style="color: #008000; font-weight: bold">None</span>       <span style="color: #3D7B7B; font-style: italic"># None = jeszcze nic nie przyszło</span>
+    pozycja: <span style="color: #008000">tuple</span>[<span style="color: #008000">float</span>, <span style="color: #008000">float</span>] <span style="color: #666666">|</span> <span style="color: #008000; font-weight: bold">None</span> <span style="color: #666666">=</span> <span style="color: #008000; font-weight: bold">None</span>   <span style="color: #3D7B7B; font-style: italic"># (x, y) w układzie mapy</span>
+    <span style="color: #3D7B7B; font-style: italic"># w krokach 4-5 dopiszesz: limit_kmh, tryb, stan_trasy, cel</span>
+</code></pre>
+
+<p>Napisz klasę węzła <code>StanNode</code>, która:</p>
+<ul>
+<li>tworzy obiekt <code>StanPojazdu</code>,</li>
+<li>subskrybuje prędkość i pozycję (zwykły QoS, kolejka 10) i zapisuje wartości do stanu,</li>
+<li>ma metodę <code>podsumowanie()</code> zwracającą tekst w rodzaju
+  <code>v=12.3 km/h, pozycja=(201.4, -55.0)</code>, z „—” w miejscu brakujących wartości.</li>
+</ul>
+<p>Konstruktor niech przyjmuje nazwę węzła, jak <code>Licznik</code> w tutorialu. W kroku 6 okno użyje
+tej samej klasy pod inną nazwą. Funkcja <code>main()</code> w <code>stan.py</code> tworzy węzeł o nazwie
+<code>stan_pojazdu</code> i timer, który co sekundę wypisuje <code>podsumowanie()</code>.</p>
+<p><strong style="color: #1a7f37;">✔ Sprawdź:</strong></p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code>ros2<span style="color: #bbbbbb"> </span>run<span style="color: #bbbbbb"> </span>panel_kierowcy<span style="color: #bbbbbb"> </span>stan<span style="color: #bbbbbb"> </span>--ros-args<span style="color: #bbbbbb"> </span>-p<span style="color: #bbbbbb"> </span>use_sim_time:<span style="color: #666666">=</span><span style="color: #008000">true</span>
+</code></pre>
+
+<p>Co sekundę jedna linia. W czasie jazdy prędkość i pozycja się zmieniają, a na postoju
+prędkość wynosi 0.</p>
+<h3 style="margin-top: 1.6em;">Krok 4. Tematy stanu Autoware</h3>
+<p>Dopisz do stanu i do węzła tryb pracy, stan trasy i limit prędkości. Wszystkie trzy tematy
+subskrybuj z <code>API_QOS</code> (skopiuj z tutorialu). Bez tego dostaniesz wartość dopiero przy jej
+zmianie.</p>
+<ul>
+<li><strong>Tryb</strong> i <strong>stan trasy</strong> to liczby. Zamiast przepisywać nazwy ręcznie, odczytaj je ze stałych
+  zdefiniowanych w samej wiadomości:</li>
+</ul>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code>NAZWY_TRYBOW <span style="color: #666666">=</span> {v: k <span style="color: #008000; font-weight: bold">for</span> k, v <span style="color: #AA22FF; font-weight: bold">in</span> <span style="color: #008000">vars</span>(OperationModeState)<span style="color: #666666">.</span>items()
+                <span style="color: #008000; font-weight: bold">if</span> k<span style="color: #666666">.</span>isupper() <span style="color: #AA22FF; font-weight: bold">and</span> <span style="color: #008000">isinstance</span>(v, <span style="color: #008000">int</span>)}
+<span style="color: #3D7B7B; font-style: italic"># {0: &#39;UNKNOWN&#39;, 1: &#39;STOP&#39;, 2: &#39;AUTONOMOUS&#39;, 3: &#39;LOCAL&#39;, 4: &#39;REMOTE&#39;}</span>
+</code></pre>
+
+<ul>
+<li><strong>Limit</strong> przychodzi w m/s, a panel pokazuje km/h.</li>
+</ul>
+<p>Dopisz nowe pola do <code>podsumowanie()</code>.</p>
+<p><strong style="color: #1a7f37;">✔ Sprawdź:</strong></p>
+<ol>
+<li>Zaraz po uruchomieniu węzła tryb i stan trasy mają wartość (np. <code>tryb=STOP, trasa=UNSET</code>),
+   a nie „—”.</li>
+<li>Limit pojawia się, gdy Autoware pierwszy raz zaplanuje trasę. W tej konfiguracji to 15 km/h.</li>
+<li>Po kliknięciu Auto w RViz tryb zmienia się na AUTONOMOUS, a po dojeździe do celu sam
+   wraca na STOP przy stanie trasy ARRIVED.</li>
+</ol>
+<h3 style="margin-top: 1.6em;">Krok 5. Cel trasy i odległość</h3>
+<p>Cel jest w pierwszym elemencie listy <code>data</code> wiadomości <code>Route</code>. Lista jest pusta, gdy trasy
+nie ma, więc trzeba to sprawdzić:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code><span style="color: #008000; font-weight: bold">def</span> <span style="color: #0000FF">on_route</span>(<span style="color: #008000">self</span>, msg):
+    <span style="color: #008000; font-weight: bold">if</span> msg<span style="color: #666666">.</span>data:                        <span style="color: #3D7B7B; font-style: italic"># pusta lista = brak trasy</span>
+        g <span style="color: #666666">=</span> msg<span style="color: #666666">.</span>data[<span style="color: #666666">0</span>]<span style="color: #666666">.</span>goal<span style="color: #666666">.</span>position
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>stan<span style="color: #666666">.</span>cel <span style="color: #666666">=</span> (g<span style="color: #666666">.</span>x, g<span style="color: #666666">.</span>y)
+    <span style="color: #008000; font-weight: bold">else</span>:
+        <span style="color: #008000">self</span><span style="color: #666666">.</span>stan<span style="color: #666666">.</span>cel <span style="color: #666666">=</span> <span style="color: #008000; font-weight: bold">None</span>
+</code></pre>
+
+<p>Odległość do celu w linii prostej policz z pozycji i celu (<code>math.dist</code>). Zwracaj <code>None</code>,
+gdy brakuje któregoś z nich. Najwygodniej jako metodę albo <code>@property</code> w <code>StanPojazdu</code>.</p>
+<p><strong style="color: #1a7f37;">✔ Sprawdź:</strong></p>
+<ol>
+<li>Bez ustawionego celu: <code>do celu=—</code>, a program działa dalej.</li>
+<li>Po ustawieniu celu odległość jest bliska tej z RViz i maleje w czasie jazdy.</li>
+<li>Po dojeździe zostaje mniej niż ok. 2 m.</li>
+<li>Po <strong>Clear Route</strong> w RViz znowu pojawia się „—”.</li>
+</ol>
+<p>Teraz węzeł danych jest gotowy: to jest zadanie 1 projektu.</p>
+<h3 style="margin-top: 1.6em;">Krok 6. Okno</h3>
+<p>Zbuduj okno w <code>panel.py</code> według kroku 6 tutorialu: ROS w osobnym wątku z executorem,
+<code>QTimer</code> co 100 ms przepisuje stan do etykiet, a na końcu sprzątanie w dobrej kolejności.
+Węzeł utwórz jako <code>StanNode('panel_kierowcy')</code>, czyli pod inną nazwą niż w <code>stan.py</code>.</p>
+<p>Elementy okna:</p>
+<ul>
+<li>duży licznik prędkości (<code>QLabel</code> z dużą czcionką, <code>setAlignment(Qt.AlignCenter)</code>),</li>
+<li>etykieta trybu pracy,</li>
+<li>trzy wiersze: Limit, Trasa, Do celu (<code>QGridLayout</code>: nazwa w kolumnie 0, wartość w kolumnie 1).</li>
+</ul>
+<p>Licznik pokazuj bez miejsc po przecinku. Uwaga na „-0”: na postoju Autoware raportuje czasem
+-0.0 km/h. Pomoże <code>round()</code> albo <code>abs()</code>.</p>
+<p><strong style="color: #1a7f37;">✔ Sprawdź:</strong></p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code>ros2<span style="color: #bbbbbb"> </span>run<span style="color: #bbbbbb"> </span>panel_kierowcy<span style="color: #bbbbbb"> </span>panel<span style="color: #bbbbbb"> </span>--ros-args<span style="color: #bbbbbb"> </span>-p<span style="color: #bbbbbb"> </span>use_sim_time:<span style="color: #666666">=</span><span style="color: #008000">true</span>
+</code></pre>
+
+<ol>
+<li>Okno pokazuje te same wartości co <code>stan</code> uruchomiony obok w drugim terminalu.</li>
+<li><code>ros2 node list | sort | uniq -d</code> nic nie wypisuje (nazwy węzłów się nie powtarzają).</li>
+<li>Okno zamyka się bez błędów i krzyżykiem, i przez Ctrl+C w terminalu.</li>
+</ol>
+<h3 style="margin-top: 1.6em;">Krok 7. Kolory i ostrzeżenia</h3>
+<p>Dopisz trzy rzeczy w metodzie okna, która co 100 ms odświeża etykiety:</p>
+<ol>
+<li><strong>Kolor trybu.</strong> Tło etykiety zależy od trybu, np. zielone dla AUTONOMOUS, czerwone dla STOP,
+   szare dla nieznanego: <code>etykieta.setStyleSheet(f'background: {kolor}; color: white')</code>.</li>
+<li><strong>Czerwony licznik</strong>, gdy prędkość przekracza limit o więcej niż 2 km/h. Gdy prędkości albo
+   limitu jeszcze nie ma, licznik zostaje w normalnym kolorze.</li>
+<li><strong>„Przejmij sterowanie”</strong>: komunikat widoczny przez 5 s, gdy tryb zmienił się z AUTONOMOUS
+   na inny. Okno musi pamiętać tryb z poprzedniego odświeżenia. Czas odmierzaj
+   <code>time.monotonic()</code>. Wyjątek: po zwykłym dojeździe do celu Autoware samo przechodzi w STOP,
+   a stan trasy to wtedy ARRIVED. To nie powód do alarmu.</li>
+</ol>
+<p>Wyjście z trybu autonomicznego (do testu 3) wymusisz w drugim terminalu poleceniem:</p>
+<pre style="background-color: #f6f8fa; border: 1px solid #d1d9e0; padding: 12px 14px; line-height: 1.45; font-size: 0.9em; color: #1f2328;"><code>ros2<span style="color: #bbbbbb"> </span>service<span style="color: #bbbbbb"> </span>call<span style="color: #bbbbbb"> </span>/api/operation_mode/change_to_stop<span style="color: #bbbbbb"> </span>autoware_adapi_v1_msgs/srv/ChangeOperationMode
+</code></pre>
+
+<p><strong style="color: #1a7f37;">✔ Sprawdź</strong> (wszystkie cztery testy w czasie jazdy autonomicznej):</p>
+<ol>
+<li>Przy limicie 15 km/h licznik się nie czerwieni. Auto przekracza limit najwyżej o ok. 1 km/h.</li>
+<li>Obniż limit suwakiem <em>Set Velocity Limit</em> w RViz do 5 km/h. Licznik robi się czerwony
+   i wraca do normalnego koloru, gdy auto zwolni.</li>
+<li>Po poleceniu <code>change_to_stop</code> pojawia się „Przejmij sterowanie” i znika po 5 s.</li>
+<li>Po zwykłym dojeździe do celu komunikat się nie pojawia.</li>
+</ol>
+<p>Suwak działa tylko w dół: w tej konfiguracji Autoware jedzie najwyżej 15 km/h.</p>
+<h3 style="margin-top: 1.6em;">Krok 8. Test końcowy i oddanie</h3>
+<p>Przejdź listę kontrolną:</p>
+<ol>
+<li><code>colcon build --packages-select panel_kierowcy</code> bez błędów.</li>
+<li>Panel uruchomiony przed ustawieniem celu pokazuje „—” tam, gdzie brak danych, i się nie
+   wywraca.</li>
+<li>Przejazd autonomiczny od startu do celu: wszystkie pola się zgadzają, kolory i komunikat
+   działają jak w kroku 7.</li>
+<li>Okno zamyka się czysto.</li>
+</ol>
+<p>Oddajesz:</p>
+<ul>
+<li>pakiet <code>panel_kierowcy</code> w <code>ws/src/</code>,</li>
+<li>nagranie ekranu do 1 minuty: przejazd autonomiczny ze zmianą limitu prędkości, widoczne
+  RViz i panel,</li>
+<li><code>README.md</code> w pakiecie: jak uruchomić i co pokazuje każde pole (z jakiego tematu pochodzi).</li>
+</ul>
+<p><strong>Dla chętnych:</strong></p>
+<ul>
+<li>wykres prędkości i limitu z ostatnich 60 s (matplotlib osadzony w PyQt5),</li>
+<li>liczba i odległość najbliższego obiektu z <code>/perception/object_recognition/objects</code>,</li>
+<li>przycisk „Zatrzymaj” wywołujący <code>/api/operation_mode/change_to_stop</code>.</li>
+</ul>
+<h3 style="margin-top: 1.6em;">Gdy coś nie działa</h3>
+<div class="table-responsive"><table class="table table-bordered table-sm">
+<thead class="thead-light">
+<tr>
+<th>Objaw</th>
+<th>Przyczyna</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tryb, trasa albo limit pokazują „—” mimo działającego Autoware</td>
+<td>brak <code>API_QOS</code> przy subskrypcji (krok 4)</td>
+</tr>
+<tr>
+<td>limit „—”, a reszta działa</td>
+<td>Autoware jeszcze nie zaplanowało żadnej trasy: ustaw cel</td>
+</tr>
+<tr>
+<td><code>do celu</code> zawsze „—”</td>
+<td>cel z <code>/planning/mission_planning/goal</code> zamiast <code>/api/routing/route</code> (krok 1)</td>
+</tr>
+<tr>
+<td><code>IndexError</code> w <code>on_route</code></td>
+<td>brak sprawdzenia, czy lista <code>data</code> nie jest pusta (krok 5)</td>
+</tr>
+<tr>
+<td>przycisk Auto w RViz nieaktywny</td>
+<td>dwa węzły o tej samej nazwie (krok 6, <code>ros2 node list</code>)</td>
+</tr>
+<tr>
+<td>panel się spóźnia albo zacina</td>
+<td><code>rclpy.spin_once()</code> w timerze okna zamiast osobnego wątku</td>
+</tr>
+<tr>
+<td><code>Segmentation fault</code> przy zamykaniu</td>
+<td>zła kolejność sprzątania (krok 6 tutorialu)</td>
+</tr>
+<tr>
+<td>okno nie reaguje na Ctrl+C</td>
+<td>brak <code>signal.signal(signal.SIGINT, ...)</code></td>
+</tr>
+<tr>
+<td><code>could not connect to display</code></td>
+<td>na hoście: <code>xhost +local:docker</code></td>
+</tr>
+<tr>
+<td>„Przejmij sterowanie” po każdym dojeździe do celu</td>
+<td>brak wyjątku dla stanu trasy ARRIVED (krok 7)</td>
+</tr>
+</tbody>
+</table></div>

@@ -10,6 +10,7 @@ Dodatkowa opcja --fps N: ile klatek na sekundę wysyła kamera (domyślnie 20, c
 kroku symulacji). Mniej klatek = mniej danych w sieci.
 """
 
+import argparse
 import sys
 
 import carla
@@ -51,11 +52,30 @@ def _camera_manager_with_fps(self, *args, **kwargs):
 
 mc.CameraManager.__init__ = _camera_manager_with_fps
 
+_parse_args = argparse.ArgumentParser.parse_args
+
+
+def _parse_args_with_fps(self, *args, **kwargs):
+    # Dopisujemy --fps do parsera z manual_control.py, żeby był też w --help.
+    if not any("--fps" in action.option_strings for action in self._actions):
+        self.add_argument(
+            "--fps", metavar="N", type=float, default=20.0,
+            help="camera frames per second sent over the network (default: 20 = every "
+                 "simulation step; fewer = less network traffic, e.g. --fps 8)")
+        self.epilog = (
+            "carla-manual sets: --host from CARLA_HOST (.env), --rolename manual_<hostname>, "
+            "--res 800x450 (override with your own --res). --sync is disabled on the shared "
+            "server. Network traffic per person ~ width x height x 4 B x fps, "
+            "e.g. --res 320x180 --fps 8 ~ 1.8 MB/s.")
+    parsed = _parse_args(self, *args, **kwargs)
+    global _camera_fps
+    _camera_fps = parsed.fps
+    return parsed
+
+
+argparse.ArgumentParser.parse_args = _parse_args_with_fps
+
 if __name__ == "__main__":
     if "--sync" in sys.argv:
         sys.exit("--sync nie działa ze wspólnym serwerem: świat taktuje carla-master")
-    if "--fps" in sys.argv:
-        i = sys.argv.index("--fps")
-        _camera_fps = float(sys.argv[i + 1])
-        del sys.argv[i:i + 2]
     mc.main()

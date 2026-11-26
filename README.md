@@ -53,6 +53,8 @@ naraz, każde na innym komputerze i z własnym autem w tym samym świecie.
 > w `autoware_launch`. Autoware od tamtej pory przeszło na `autoware_msgs`, a most TUM nie jest
 > rozwijany. Stara wersja jest dostępna w historii git (gałąź `main` sprzed zmiany).
 
+Na zajęcia: [10 mini projektów z instrukcjami](projekty/README.md).
+
 ## Dwa sposoby pracy
 
 | | Gdzie działa CARLA | Gdzie działa Autoware | Instrukcja |
@@ -180,13 +182,24 @@ W `.env` na serwerze:
 
 Po zmianie uruchom ponownie `./scripts/carla_server.sh` (z `--window`, jeśli chcesz okno).
 
+Pogodę zmienia się w trakcie, bez restartu (dla wszystkich naraz):
+
+```bash
+./scripts/carla_weather.sh                 # lista dostępnych i bieżąca pogoda
+./scripts/carla_weather.sh HardRainNoon    # np. ClearNoon, WetNoon, ClearSunset, ClearNight
+```
+
 ### Kto jest podłączony
 
 ```bash
-docker compose logs -f carla-master
+./scripts/carla_status.sh            # auta w świecie, komputery połączone z CARLA, tempo symulacji
+docker compose logs -f carla-master  # na bieżąco: klienci Autoware i statystyki
 ```
 
-Pokazuje dołączających i odłączanych klientów oraz co 30 s statystyki, np.:
+`carla_status.sh` pokazuje wszystkich: Autoware (`ego_<komputer>`), jazdę ręczną
+(`manual_<komputer>`) i ruch uliczny. Działa też na terminalu (łączy się z `CARLA_HOST`
+przez kontener Autoware), ale adresy IP podłączonych komputerów widać tylko na serwerze. Log `carla-master` pokazuje tylko klientów Autoware
+(jazda ręczna nie zgłasza się do mastera), za to co 30 s wypisuje statystyki, np.:
 
 ```
 16.5 kroków/s, klientów: 1 | na krok: CARLA 1 ms, czekanie na klientów 58 ms, wyrównanie do czasu rzeczywistego 1 ms
@@ -234,10 +247,11 @@ docker compose pull autoware
 ./scripts/download_artifacts.sh
 ```
 
-W pliku `.env` wpisz adres serwera:
+W pliku `.env` jest już adres serwera w laboratorium. Zmień go tylko wtedy, gdy serwer
+ma inny adres:
 
 ```bash
-CARLA_HOST=192.168.0.106        # adres IP serwera CARLA
+CARLA_HOST=192.168.1.1          # adres IP serwera CARLA
 ```
 
 ### Wspólna jazda ręczna (`carla-manual`)
@@ -249,7 +263,7 @@ i zobaczyć auta pozostałych:
 xhost +local:docker
 docker compose up -d autoware
 ./scripts/aw_shell.sh
-carla-manual                   # większe okno: carla-manual --res 1280x720
+carla-manual                   # opcje: carla-manual --help
 ```
 
 | Klawisz | Działanie |
@@ -268,7 +282,14 @@ Pogoda (C), warstwy mapy (V/B) i nagrywanie/odtwarzanie (CTRL+R/CTRL+P) są zabl
 bo zmieniłyby świat wszystkim. To jest [`manual_control.py`](docker/autoware/carla_manual/manual_control.py)
 z CARLA 0.9.16 bez zmian, z blokadą w [`carla_manual.py`](docker/autoware/carla_manual/carla_manual.py).
 
-Obraz z kamery idzie przez sieć: okno 800×450 (domyślne) to ~29 MB/s na osobę, 1280×720 to ~74 MB/s.
+Obraz z kamery idzie przez sieć, około szerokość × wysokość × 4 B × klatki/s na osobę.
+Dobierz rozmiar okna (`--res`) i liczbę klatek (`--fps`) do sieci:
+
+| Polecenie | Dane na osobę | Sieć |
+|---|---|---|
+| `carla-manual` (800×450, 20 kl/s) | ~29 MB/s | 1 Gb/s, kilka osób |
+| `carla-manual --res 640x360 --fps 8` | ~7 MB/s | 100 Mb/s, jedna osoba |
+| `carla-manual --res 320x180 --fps 8` | ~2 MB/s | 100 Mb/s, kilka osób |
 
 ### Uruchomienie
 
@@ -357,7 +378,7 @@ Najważniejsze tematy:
 ## Wszystko na jednym komputerze
 
 Serwer CARLA i Autoware na tej samej maszynie, np. do pracy w domu. Zrób instalację z obu
-sekcji powyżej (`docker compose pull` pobiera wszystkie obrazy naraz) i zostaw w `.env`
+sekcji powyżej (`docker compose pull` pobiera wszystkie obrazy naraz) i ustaw w `.env`
 `CARLA_HOST=localhost`. Potem:
 
 ```bash
@@ -383,6 +404,7 @@ Wersje i opcje są w pliku [`.env`](.env):
 | `CARLA_NPC_VEHICLES` | serwer | liczba aut ruchu ulicznego |
 | `CARLA_SPECTATOR` | serwer | kamera okna: `top` (domyślnie, na starcie widok całej mapy z góry), `follow` (za kolejnymi autami), `off` (bez ustawiania) |
 | `CARLA_STEP_TIMEOUT` | serwer | najdłuższe czekanie na klientów w jednym kroku (domyślnie 0,25 s) |
+| `CARLA_CAMERA_SIZE`, `CARLA_CAMERA_HZ` | terminal | kamera auta Autoware: rozmiar (domyślnie `800x450`) i klatki/s (domyślnie 5). Obraz idzie z serwera przez sieć, ~7 MB/s przy domyślnych |
 | `CARLA_HOST`, `CARLA_PORT` | terminal | adres serwera CARLA; `localhost` = ten sam komputer |
 | `AUTOWARE_DATA` | terminal | gdzie na hoście leżą mapy i modele |
 
@@ -429,6 +451,7 @@ i `AUTOWARE_VERSION` w `.env`.
 | `carla-aw` czeka na serwer CARLA w nieskończoność | nie działa `carla-master` albo ma inną mapę: `docker compose logs carla-master` na serwerze. Na terminalu sprawdź `CARLA_HOST` (adres serwera mógł się zmienić) i firewall |
 | `Brak kolejnej klatki CARLA` | `carla-master` się zatrzymał: na serwerze `./scripts/carla_server.sh` |
 | symulacja wolniejsza niż czas rzeczywisty (< 20 kroków/s w logu `carla-master`) | duże „czekanie na klientów”: sieć (Wi-Fi) albo przeciążony terminal. Kabel zamiast Wi-Fi, zamknij inne programy |
+| `carla-manual` się otwiera, ale auto nie reaguje na klawisze albo obraz prawie stoi | najpierw kliknij w okno (musi mieć fokus klawiatury). Jeśli dalej nie działa, to zwykle sieć: sprawdź prędkość łącza serwera i terminala (`cat /sys/class/net/<karta>/speed`, ma być 1000) i ping do serwera (w sieci lokalnej < 1 ms). Po takim zatorze zrestartuj CARLA na serwerze: `docker compose restart carla` |
 | w RViz „No Image” zamiast kamery | patrz [Uruchomienie](#uruchomienie-1): ustaw temat `/sensing/camera/CAM_FRONT/image_raw` |
 | RViz się nie otwiera | `xhost +local:docker`, sprawdź `echo $DISPLAY` przed `docker compose up` |
 | tematy ROS niewidoczne z hosta | kontener używa CycloneDDS tylko na `lo`. Na hoście ustaw `RMW_IMPLEMENTATION=rmw_cyclonedds_cpp` i ten sam `CYCLONEDDS_URI` (`docker compose exec autoware cat /home/aw/cyclonedds.xml`) |
