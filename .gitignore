@@ -138,3 +138,6 @@ compose.override.yaml
 
 # Plik z wersjami komponentów jest częścią repozytorium
 !.env
+*.deb
+*.deb
+*.deb
